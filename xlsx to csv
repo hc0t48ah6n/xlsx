@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Excel→CSV 変換ツール</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    
+    <style>
+        body {
+            font-family: "Segoe UI", "Meiryo", sans-serif;
+            background-color: #f0f4f8;
+            margin: 0;
+            padding: 40px 20px;
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        /* 右上メニューボタン */
+        .menu-icon {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+            padding: 12px;
+            background: #1b5e20;
+            color: white;
+            border-radius: 50%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex;
+            z-index: 100;
+            transition: 0.3s;
+        }
+        .menu-icon:hover { transform: rotate(90deg); background: #2e7d32; }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        h1 { color: #1b5e20; text-align: center; margin-top: 0; font-size: 1.8rem; }
+        
+        #drop-zone {
+            border: 3px dashed #a5d6a7;
+            background: #f1f8e9;
+            padding: 50px;
+            text-align: center;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-bottom: 25px;
+            transition: 0.3s;
+        }
+        #drop-zone:hover { border-color: #4caf50; background: #e8f5e9; }
+
+        /* プレビューエリア */
+        .preview-container {
+            margin-top: 20px;
+            overflow: auto;
+            max-height: 300px;
+            border: 1px solid #e0e0e0;
+            display: none;
+            border-radius: 8px;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { background: #f5f5f5; padding: 12px; border-bottom: 2px solid #ddd; position: sticky; top: 0; }
+        td { padding: 10px; border-bottom: 1px solid #eee; }
+
+        .actions { margin-top: 25px; text-align: center; }
+        #download-btn {
+            display: none;
+            background: #2e7d32;
+            color: white;
+            padding: 15px 50px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 15px rgba(46,125,50,0.4);
+        }
+
+        /* --- 下部固定モーダル --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .modal-bottom {
+            position: fixed;
+            bottom: -100%; /* 初期状態は画面外 */
+            left: 0;
+            width: 100%;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            padding: 30px;
+            box-sizing: border-box;
+            z-index: 1001;
+            transition: bottom 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 -5px 25px rgba(0,0,0,0.15);
+        }
+        .modal-overlay.active { display: block; opacity: 1; }
+        .modal-bottom.active { bottom: 0; }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+        .close-icon { cursor: pointer; color: #666; }
+        .modal-body { line-height: 1.8; color: #444; }
+        .warning-box {
+            background: #fff3e0;
+            border-left: 5px solid #ff9800;
+            padding: 10px 15px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="menu-icon" onclick="toggleModal(true)">
+    <span class="material-symbols-outlined">menu</span>
+</div>
+
+<div class="container">
+    <h1>Excel → CSV 変換・確認</h1>
+    
+    <div id="drop-zone">
+        <span class="material-symbols-outlined" style="font-size: 60px; color: #4caf50;">description</span><br>
+        ここにExcelファイルをドロップ
+    </div>
+    <input type="file" id="file-input" accept=".xlsx" style="display:none">
+
+    <div id="status" style="text-align:center; color:#666; margin-bottom: 10px;">ファイルを待機中...</div>
+
+    <div class="preview-container" id="preview-area">
+        <table id="preview-table"></table>
+    </div>
+
+    <div class="actions">
+        <a id="download-btn">この内容をCSVで保存</a>
+    </div>
+</div>
+
+<div id="overlay" class="modal-overlay" onclick="toggleModal(false)"></div>
+<div id="bottomModal" class="modal-bottom">
+    <div class="modal-header">
+        <h2 style="margin:0; color:#1b5e20; display:flex; align-items:center; gap:10px;">
+            <span class="material-symbols-outlined">shield_with_heart</span>
+            プライバシーと注意事項
+        </h2>
+        <span class="material-symbols-outlined close-icon" onclick="toggleModal(false)">close</span>
+    </div>
+    <div class="modal-body">
+      <h2>
+        <hr>
+        <strong>1. データの安全性について</strong>
+        <p>このツールは、ブラウザ上（あなたのPC内）で全ての処理を行います。アップロードされたデータがサーバーに送信されることは一切ありませんので、機密情報を含むExcelでも安心してご利用いただけます。</p>
+        
+        <strong>2. 使い方</strong>
+        <p>Excelファイルをドロップすると表が表示されます。中身を確認して、問題なければ緑色の保存ボタンを押してください。</p>
+        
+        <strong>3. 推奨環境</strong>
+        <p>android16,chromeOS 144 windows11などのブラウザで動作します</p>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const status = document.getElementById('status');
+    const previewArea = document.getElementById('preview-area');
+    const previewTable = document.getElementById('preview-table');
+    const downloadBtn = document.getElementById('download-btn');
+    const overlay = document.getElementById('overlay');
+    const bottomModal = document.getElementById('bottomModal');
+
+    // モーダル切り替え
+    function toggleModal(show) {
+        if (show) {
+            overlay.classList.add('active');
+            bottomModal.classList.add('active');
+        } else {
+            overlay.classList.remove('active');
+            bottomModal.classList.remove('active');
+        }
+    }
+
+    // ファイル処理系
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.background = '#e8f5e9'; };
+    dropZone.ondragleave = () => { dropZone.style.background = '#f1f8e9'; };
+    dropZone.ondrop = (e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); };
+
+    function handleFile(file) {
+        if (!file || !file.name.endsWith('.xlsx')) {
+            status.innerText = "エラー: .xlsx形式を選択してください。";
+            return;
+        }
+        status.innerText = "読み込み中...";
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            
+            const csv = XLSX.utils.sheet_to_csv(worksheet);
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+            
+            renderTable(jsonData);
+            
+            // BOM付きUTF-8（Windows Excel文字化け対策）
+            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], {type: 'text/csv;charset=utf-8'});
+            downloadBtn.href = URL.createObjectURL(blob);
+            downloadBtn.download = file.name.replace('.xlsx', '.csv');
+            
+            status.innerText = `「${file.name}」を表示しています`;
+            previewArea.style.display = 'block';
+            downloadBtn.style.display = 'inline-block';
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function renderTable(data) {
+        previewTable.innerHTML = "";
+        data.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            row.forEach(cell => {
+                const el = document.createElement(index === 0 ? 'th' : 'td');
+                el.innerText = cell === undefined ? "" : cell;
+                tr.appendChild(el);
+            });
+            previewTable.appendChild(tr);
+        });
+    }
+</script>
+
+</body>
+</html>
